@@ -3,7 +3,7 @@ Dogbone addin for fusion 360
 #  Installation note: 
 The easiest way to install is to use Jerome Briot's installer, which you can get from the Fusion App store (utilities/add-ins/fusion App Store - [
 Install scripts or addins from GitHub or GitLab](https://apps.autodesk.com/FUSION/en/Detail/Index?id=789800822168335025&appLang=en&os=Mac)) from the top menu in F360.
-If you want to install manually, ensure that the folder name does include anything other than a-zA-Z0-9 (ie make sure "Dogbone" doesn't have a prefix or suffix)
+If you want to install manually, ensure that the folder name does not include anything other than a-zA-Z0-9 (ie make sure "Dogbone" doesn't have a prefix or suffix)
 # Version History
 ## Version 2.4
 * added preview mode
