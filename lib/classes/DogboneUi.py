@@ -170,9 +170,23 @@ class DogboneUi:
 
     @eventHandler(handler_cls=adsk.core.CommandEventHandler)
     def onExecutePreview(self, args:adsk.core.CommandEventArgs):
+        # debug: 다중 face 프리뷰 미갱신 이슈 추적용 - previewActive/previewEnabled로 조기 skip 되는지,
+        # 아니면 executeHandler까지 도달했는데 결과가 안 보이는지(예외가 삼켜지는지) 구분하기 위한 로그
+        faceCount = len(self.selection.selectedFaces)
+        edgeCount = len(self.selection.selectedEdges)
         if self.previewActive and self.param.previewEnabled:
+            logger.debug(
+                f"onExecutePreview: executing - faces={faceCount}, edges={edgeCount}, "
+                f"previewActive={self.previewActive}, previewEnabled={self.param.previewEnabled}"
+            )
             args.isValidResult = True
             self.executeHandler(self.param, self.selection)
+            logger.debug("onExecutePreview: executeHandler returned normally")
+        else:
+            logger.debug(
+                f"onExecutePreview: SKIPPED (early return) - faces={faceCount}, edges={edgeCount}, "
+                f"previewActive={self.previewActive}, previewEnabled={self.param.previewEnabled}"
+            )
 
     @eventHandler(handler_cls=adsk.core.CommandEventHandler)
     def onExecute(self, args):
@@ -485,10 +499,16 @@ class DogboneUi:
                 selectionDict.keys()
             )  # get difference -> results in
 
+            # debug: 다중 face 선택 추적용 - 몇 번째 face가 추가되는지, 추가 전 edge 개수 확인
+            logger.debug(
+                f"FACE_SELECT add: existingFaces={len(self.selection.selectedFaces)}, "
+                f"addedFaces={len(addedFaces)}, edgesBefore={len(self.selection.selectedEdges)}"
+            )
+
             for faceId in addedFaces:
                 changedEntity = selectionDict[
                     faceId
-                ] 
+                ]
                 activeOccurrenceId = (
                     hash(changedEntity.assemblyContext.entityToken)
                     if changedEntity.assemblyContext
@@ -513,6 +533,12 @@ class DogboneUi:
                     activeOccurrenceId
                 ] = faces  # adds a face to a list of faces associated with this occurrence
                 self.selection.selectedFaces.update({faceObj.faceId: faceObj for faceObj in createdFace})
+
+                # debug: registerEdges 완료 직후(DbFace 생성자 안에서 이미 실행됨) edge 총 개수 확인
+                # - registerEdges의 중복-claim 가드가 실제로 몇 개를 걸러냈는지는 위 DbFace/DbClasses 로그와 대조
+                logger.debug(
+                    f"FACE_SELECT add: faceId={faceId} registered, edgesAfter={len(self.selection.selectedEdges)}"
+                )
 
                 for face_id in addedFaces:
                     self.selection.selectedFaces[face_id].selectAll()

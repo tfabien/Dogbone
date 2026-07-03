@@ -149,7 +149,24 @@ class DbFace:
                     continue #angle between min and max and doing both acute and obtuse
 
                 edgeId = hash(edge.entityToken) #this normally created by the DbEdge instantiation, but it's needed earlier (I thmk!)
-                self.selection.selectedEdges[edgeId] = self._associatedEdgesDict[ 
+
+                # fix: 두 개의 평행면(예: 박스의 위/아래 면)을 동시에 선택하면 두 face의 "코너에서
+                # 뻗어나온 엣지" 후보가 동일한 물리적 엣지(공유 수직 엣지)로 겹칠 수 있다.
+                # processedEdges 가드는 DbFace 인스턴스 개별 스코프라 이 케이스를 막지 못해서,
+                # 이미 다른 face가 등록한 edgeId를 다시 DbEdge로 재생성 + addSelection 재호출하게 되고,
+                # 그 결과 selection.selectedEdges의 소유권이 뒤바뀌고(이미 선택된 항목을 다시
+                # addSelection) 프리뷰 생성이 조용히 실패하는 문제로 이어졌다(예외는 데코레이터가 삼킴).
+                # → 이미 다른 face가 선점한 edge는 재등록하지 않고 최초 등록한 face 소유로 유지한다.
+                if edgeId in self.selection.selectedEdges:
+                    logger.debug(
+                        f"registerEdges: edge {edgeId} already claimed by another face "
+                        f"(owner faceId={self.selection.selectedEdges[edgeId]._parentFace._faceId}), "
+                        f"skipping re-registration for faceId={self._faceId}"
+                    )
+                    self.processedEdges.append(edge)
+                    continue
+
+                self.selection.selectedEdges[edgeId] = self._associatedEdgesDict[
                     edgeId
                 ] = DbEdge(edge=edge, parentFace=self)
                 self.processedEdges.append(edge)
