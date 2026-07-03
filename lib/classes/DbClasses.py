@@ -157,10 +157,21 @@ class DbFace:
                 # 그 결과 selection.selectedEdges의 소유권이 뒤바뀌고(이미 선택된 항목을 다시
                 # addSelection) 프리뷰 생성이 조용히 실패하는 문제로 이어졌다(예외는 데코레이터가 삼킴).
                 # → 이미 다른 face가 선점한 edge는 재등록하지 않고 최초 등록한 face 소유로 유지한다.
-                if edgeId in self.selection.selectedEdges:
+                #
+                # fix(regression): reSelectEdges()는 같은 DbFace 인스턴스에 대해 self.__init__()을
+                # 재호출해 이 face 자신을 다시 등록한다. 이때 self.selection.selectedEdges에는
+                # "이전 회차에 이 face 자신이" 등록해 둔 edgeId가 아직 남아 있는데(초기화되지 않음),
+                # 위 가드가 소유자를 구분하지 않고 무조건 skip 처리하는 바람에 매번 자기 자신의
+                # edge 등록이 전부 막혀 _associatedEdgesDict가 텅 비어버렸다. 그 결과 각도/슬라이더
+                # 변경(minSlider/maxSlider/acuteAngle/obtuseAngle/modeRow)이 reSelectEdges를 트리거할
+                # 때마다 이 face의 엣지가 사라져 프리뷰가 갱신되지 않거나 깨지는 문제로 이어졌다.
+                # → 소유자가 "다른" face일 때만 skip하고, 소유자가 자기 자신(같은 faceId)이면
+                # 정상적으로 재등록되도록 faceId를 비교한다.
+                existingEdgeOwner = self.selection.selectedEdges.get(edgeId)
+                if existingEdgeOwner is not None and existingEdgeOwner._parentFace._faceId != self._faceId:
                     logger.debug(
                         f"registerEdges: edge {edgeId} already claimed by another face "
-                        f"(owner faceId={self.selection.selectedEdges[edgeId]._parentFace._faceId}), "
+                        f"(owner faceId={existingEdgeOwner._parentFace._faceId}), "
                         f"skipping re-registration for faceId={self._faceId}"
                     )
                     self.processedEdges.append(edge)
