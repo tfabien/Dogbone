@@ -150,33 +150,28 @@ class DbFace:
 
                 edgeId = hash(edge.entityToken) #this normally created by the DbEdge instantiation, but it's needed earlier (I thmk!)
 
-                # fix: 두 개의 평행면(예: 박스의 위/아래 면)을 동시에 선택하면 두 face의 "코너에서
-                # 뻗어나온 엣지" 후보가 동일한 물리적 엣지(공유 수직 엣지)로 겹칠 수 있다.
-                # processedEdges 가드는 DbFace 인스턴스 개별 스코프라 이 케이스를 막지 못해서,
-                # 이미 다른 face가 등록한 edgeId를 다시 DbEdge로 재생성 + addSelection 재호출하게 되고,
-                # 그 결과 selection.selectedEdges의 소유권이 뒤바뀌고(이미 선택된 항목을 다시
-                # addSelection) 프리뷰 생성이 조용히 실패하는 문제로 이어졌다(예외는 데코레이터가 삼킴).
-                # → 이미 다른 face가 선점한 edge는 재등록하지 않고 최초 등록한 face 소유로 유지한다.
+                # fix(5차 - 3차/4차의 "다른 face 소유권" 가드 완전 제거):
+                # 두 개의 평행면(예: 박스의 위/아래 면)을 동시에 선택하면 두 face의 "코너에서 뻗어나온
+                # 엣지" 후보가 동일한 물리적 BRepEdge(공유 수직 엣지)로 겹칠 수 있다. 3차 수정(24ae27d)은
+                # 이를 "이미 다른 face가 선점한 edge는 스킵"으로 막았고, 4차 수정(16b6b67)은 자기 자신
+                # 재등록만 예외로 뒀지만, "다른" face가 이미 등록한 edge는 여전히 완전히 스킵되어
+                # 두 번째 face의 _associatedEdgesDict가 아예 비게 되는 문제(오토디텍트 무반응, 엣지
+                # 개수 0)로 이어졌다. self.selection.selectedEdges는 다이얼로그 세션 내내 유지되고
+                # 전체 face 해제(selectionCount==0) 때만 초기화되므로(DogboneUi.py FACE_SELECT 핸들러),
+                # 프리뷰 체크박스나 디텍션 모드를 껐다 켜도 이 소유권 기록은 사라지지 않아 face2는
+                # 세션 내내 계속 차단됐다.
                 #
-                # fix(regression): reSelectEdges()는 같은 DbFace 인스턴스에 대해 self.__init__()을
-                # 재호출해 이 face 자신을 다시 등록한다. 이때 self.selection.selectedEdges에는
-                # "이전 회차에 이 face 자신이" 등록해 둔 edgeId가 아직 남아 있는데(초기화되지 않음),
-                # 위 가드가 소유자를 구분하지 않고 무조건 skip 처리하는 바람에 매번 자기 자신의
-                # edge 등록이 전부 막혀 _associatedEdgesDict가 텅 비어버렸다. 그 결과 각도/슬라이더
-                # 변경(minSlider/maxSlider/acuteAngle/obtuseAngle/modeRow)이 reSelectEdges를 트리거할
-                # 때마다 이 face의 엣지가 사라져 프리뷰가 갱신되지 않거나 깨지는 문제로 이어졌다.
-                # → 소유자가 "다른" face일 때만 skip하고, 소유자가 자기 자신(같은 faceId)이면
-                # 정상적으로 재등록되도록 faceId를 비교한다.
-                existingEdgeOwner = self.selection.selectedEdges.get(edgeId)
-                if existingEdgeOwner is not None and existingEdgeOwner._parentFace._faceId != self._faceId:
-                    logger.debug(
-                        f"registerEdges: edge {edgeId} already claimed by another face "
-                        f"(owner faceId={existingEdgeOwner._parentFace._faceId}), "
-                        f"skipping re-registration for faceId={self._faceId}"
-                    )
-                    self.processedEdges.append(edge)
-                    continue
-
+                # 근본적으로 이 가드 자체가 잘못된 전제 위에 있었다: DbEdge.__init__의
+                # self._dogboneCentre 계산은 "edge의 두 끝점 중 parentFace에 속한 쪽" 정점을 고른다
+                # (아래 참고). 즉 같은 물리적 edge라도 face1(예: 윗면)과 face2(예: 아랫면)가 공유하면
+                # 서로 다른 끝점에 각자 별개의 도그본이 필요한 것이 정상 동작이며, 이는 "중복 등록"이
+                # 아니라 "edge 양끝에 각각 필요한 별개의 도그본"이다. 4차 조사에서 로그 23,000여 줄
+                # 전수 분석 결과 이 경로(공유 edge 재등록/재선택)에서 실제 예외/실패가 발생한 사례는
+                # 0건이었다 - 3차 수정이 상정했던 "중복 union 실패" 가설은 한 번도 확인되지 않았다.
+                # → face 간 소유권 가드를 제거하고, 가드 도입 이전 동작(각 face가 자신의 후보 edge를
+                # 모두 자신의 _associatedEdgesDict에 등록)으로 되돌린다. self.selection.selectedEdges는
+                # 여전히 최신 등록자로 갱신되며, UI 선택 갱신(removeByEntity)/로그 카운트 등 참조용으로만
+                # 쓰이므로 마지막 등록자를 가리켜도 기능에 영향 없다.
                 self.selection.selectedEdges[edgeId] = self._associatedEdgesDict[
                     edgeId
                 ] = DbEdge(edge=edge, parentFace=self)
