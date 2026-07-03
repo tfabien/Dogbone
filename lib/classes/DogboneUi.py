@@ -464,11 +464,17 @@ class DogboneUi:
                     return
 
                 # Else find the missing face in selection
+                # fix: 아래 두 지점(None 가드, 대칭차->차집합)은 FACE_SELECT add 경로에서 발견된 것과
+                # 동일한 근본 원인(recompute 이후 entity가 None이 되거나 entityToken/hash가 바뀜)에
+                # 대한 동일 패턴의 방어. 대칭차(^)를 쓰면 recompute로 hash가 바뀐, 여전히 선택 중인
+                # face까지 "missing"으로 오인해 잘못 삭제하거나 KeyError를 낼 수 있어 방향이 있는
+                # 차집합으로 변경한다.
                 selectionSet = {
-                    hash(cast(adsk.fusion.BRepEdge, s.selection(i).entity).entityToken)
+                    hash(cast(adsk.fusion.BRepEdge, entity).entityToken)
                     for i in range(s.selectionCount)
+                    if (entity := s.selection(i).entity) is not None
                 }
-                missingFaces = set(self.selection.selectedFaces.keys()) ^ selectionSet
+                missingFaces = set(self.selection.selectedFaces.keys()) - selectionSet
                 input.commandInputs.itemById(EDGE_SELECT).isVisible = True
                 input.commandInputs.itemById(EDGE_SELECT).hasFocus = True
 
@@ -488,16 +494,30 @@ class DogboneUi:
             input.commandInputs.itemById(EDGE_SELECT).isVisible = True
             input.commandInputs.itemById(EDGE_SELECT).hasFocus = True
 
+            # fix: face2 선택 크래시 근본 수정 - onExecutePreview가 도그본 프리뷰 바디를 생성하며
+            # 모델을 recompute하면, 그 시점 이후 Fusion이 반환하는 s.selection(i).entity가 완전히
+            # 무효화된 항목에 대해 None을 돌려줄 수 있다("AttributeError: 'NoneType' object has no
+            # attribute 'entityToken'"의 실제 원인). 이런 None 엔트리는 실제 사용자가 선택 해제한 게
+            # 아니라 recompute로 인한 일시적 무효화이므로, selectionDict 구성 시 걸러내고 다음 입력
+            # 변경 사이클에서 자연히 정리되도록 한다.
             selectionDict = {
-                hash(
-                    cast(adsk.fusion.BRepEdge, s.selection(i).entity).entityToken
-                ): s.selection(i).entity
+                hash(cast(adsk.fusion.BRepEdge, entity).entityToken): entity
                 for i in range(s.selectionCount)
+                if (entity := s.selection(i).entity) is not None
             }
 
-            addedFaces = set(self.selection.selectedFaces.keys()) ^ set(
-                selectionDict.keys()
-            )  # get difference -> results in
+            # fix: 기존에는 대칭차(^)를 사용해 "이미 등록된 face 목록"과 "현재 선택된 face 목록"의
+            # 차이를 addedFaces로 취급했다. 그러나 onExecutePreview의 recompute로 이미 선택된 face의
+            # BRepFace가 재생성되면 그 face의 entityToken(및 hash)이 바뀔 수 있어, 기존에 등록된
+            # 키가 selectionDict에서 사라진 것처럼 보인다. 대칭차는 이런 "사라진 옛 키"까지
+            # addedFaces에 포함시켜 버려서, 이후 `selectionDict[faceId]`가 존재하지 않는 옛 키를
+            # 조회하다 KeyError로 죽었다(onInputChanged_handler error termination: KeyError).
+            # 실제로 "새로 추가된 face"는 selectionDict에는 있지만 아직 selectedFaces에 등록되지
+            # 않은 키뿐이므로, 방향이 있는 차집합(selectionDict - selectedFaces)으로 바꿔 옛 키가
+            # 절대 addedFaces에 섞이지 않도록 한다.
+            addedFaces = set(selectionDict.keys()) - set(
+                self.selection.selectedFaces.keys()
+            )
 
             # debug: 다중 face 선택 추적용 - 몇 번째 face가 추가되는지, 추가 전 edge 개수 확인
             logger.debug(

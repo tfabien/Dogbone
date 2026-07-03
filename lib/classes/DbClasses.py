@@ -345,8 +345,33 @@ class DbFace:
     def native(self):
         return self._native
 
+    @property
+    def face(self) -> adsk.fusion.BRepFace:
+        """
+        fix: face2 선택 크래시 근본 수정 - onExecutePreview가 도그본 프리뷰 바디를 만들 때마다
+        모델이 recompute되고, 그 이전에 캐시해둔 BRepFace 트랜지언트 프록시(self._face)는
+        Fusion 내부적으로 invalid 상태가 된다(entityToken 자체가 바뀌는 경우도 있음 - 같은 바디에
+        boolean/feature 연산이 가해지면 토폴로지가 재생성된 것으로 취급되어 페이스의 영속 ID가
+        재발급될 수 있음). 이 상태에서 primaryFace.face에 직접 접근해 evaluator/pointOnFace 등을
+        부르면 "2 : InternalValidationError : face"가 발생한다(onFaceSelect PreSelectionEvent에서
+        마우스가 움직일 때마다 수백 번 반복 발생하던 원인).
+        이미 revalidate()가 point-based 재획득 메커니즘으로 존재했지만 어디서도 호출되지 않았다
+        (dead code). 여기서 접근 시점에 isValid를 확인해 자동으로 재획득하도록 프로퍼티화한다.
+        """
+        if not self._face.isValid:
+            self._face = self.revalidate()
+        return self._face
+
+    @face.setter
+    def face(self, value: adsk.fusion.BRepFace):
+        self._face = value
+
     def revalidate(self) -> adsk.fusion.BRepFace:
-        return cast(adsk.fusion.BRepFace, self.component.findBRepUsingPoint(
+        # fix: self.component(프로퍼티)는 self.face를 다시 읽으므로 self._face가 invalid인 상태에서
+        # 호출하면 face 프로퍼티 getter -> revalidate() -> self.component -> self.face 프로퍼티...로
+        # 무한 재귀에 빠진다. 생성자에서 이미 캐시해 둔 self._component(순수 Component, 리컴퓨트에
+        # 영향받지 않음)를 대신 사용해 재귀를 끊는다.
+        return cast(adsk.fusion.BRepFace, self._component.findBRepUsingPoint(
             self._refPoint, adsk.fusion.BRepEntityTypes.BRepFaceEntityType, -1.0, False
         ).item(0))
 
