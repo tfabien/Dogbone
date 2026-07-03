@@ -94,8 +94,10 @@ class DogboneUi:
         self.onFaceSelect(event=command.selectionEvent)
         self.onExecute(event=command.execute)
         self.onExecutePreview(event=command.executePreview)
-        self.onKeyDown(event=command.keyDown)
-        self.onKeyUp(event=command.keyUp)
+        # fix: Ctrl 키 기반 previewActive 토글 핸들러 제거 — 일반 클릭 선택이 가능해진 지금은
+        # onKeyUp이 Ctrl이 아닌 모든 키업(값 입력, 슬라이더 조작 등)에서 previewActive를 False로
+        # 고착시켜 프리뷰가 멈추는 잔여 버그의 원인이었음. 선택 게이트가 사라져 이 메커니즘의
+        # 존재 이유(Ctrl-click 전용 선택)도 사라졌으므로 등록 자체를 제거.
 
     def create_ui(self):
         self.face_select()
@@ -175,21 +177,6 @@ class DogboneUi:
     @eventHandler(handler_cls=adsk.core.CommandEventHandler)
     def onExecute(self, args):
         self.executeHandler(self.param, self.selection)
-
-    @eventHandler(handler_cls=adsk.core.KeyboardEventHandler)
-    def onKeyDown(self, args:adsk.core.KeyboardEventArgs):
-        keyCode = args.keyCode
-        modifier = args.modifierMask  
-        self.previewActive = not keyCode == adsk.core.KeyCodes.ControlKeyCode
-        self.command.doExecutePreview()
-
-    @eventHandler(handler_cls=adsk.core.KeyboardEventHandler)
-    def onKeyUp(self, args):
-        keyCode = args.keyCode
-        modifier = args.modifierMask  
-        self.previewActive = keyCode == adsk.core.KeyCodes.ControlKeyCode  
-        self.command.doExecutePreview()
-  
 
     @eventHandler(handler_cls=adsk.core.SelectionEventHandler)
     def onFaceSelect(self, args):
@@ -690,9 +677,9 @@ class DogboneUi:
         )
 
         previewEnabled.tooltip = "Activates live preview"
+        # fix: Ctrl 키 기반 previewActive 메커니즘 제거에 맞춰 남아있던 "ctrl-click" 안내 문구 삭제
         previewEnabled.tooltipDescription =(
-                                            "<br>Use ctrl-click when preview is active"
-                                            "<br><br>Warning:"
+                                            "<br>Warning:"
                                             "<br>the number of edges selected,"
                                             "<br>along with the power of your computer and"
                                             "<br>graphics card may result in a delay in showing the preview"
