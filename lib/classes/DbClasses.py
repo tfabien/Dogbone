@@ -42,6 +42,7 @@ class DbFace:
         design: adsk.fusion.Design = app.activeProduct
         self.rootComp = design.rootComponent
         self.ui = app.userInterface
+        self._entityToken = face.entityToken  # fix: 아래 face.isValid 폴백에서 참조되므로 self.face 대입보다 먼저 설정
         self.face = (
             face if face.isValid else design.findEntityByToken(self._entityToken)[0]
         )
@@ -50,7 +51,6 @@ class DbFace:
 
         self._params = params
         self.selection = selection
-        self._entityToken = face.entityToken
 
         self.face = face = (
             face if face.isValid else design.findEntityByToken(self._entityToken)[0]
@@ -333,6 +333,7 @@ class DbEdge:
 
     def __init__(self, edge: adsk.fusion.BRepEdge, parentFace: DbFace):
 
+        self._parentFace = parentFace  # fix: 아래 self.component(=_parentFace.component 참조) 폴백보다 먼저 대입되어야 함
 
         self._refPoint = edge.pointOnEdge
 
@@ -350,7 +351,6 @@ class DbEdge:
         self.entityToken = edge.entityToken
         self._edgeId = hash(self.entityToken)
         self._selected = True
-        self._parentFace = parentFace
         self._native = self.edge.nativeObject if self.edge.nativeObject else self.edge
         self._component = edge.body.parentComponent
         self._params = self._parentFace._params

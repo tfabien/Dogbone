@@ -203,9 +203,7 @@ class DogboneUi:
         if activeIn.id != FACE_SELECT and activeIn.id != EDGE_SELECT:
             return  # jump out if not dealing with either of the two selection boxes
 
-        if self.previewActive and self.param.previewEnabled:
-            eventArgs.isSelectable = False
-            return
+        # fix: previewActive/previewEnabled와 무관하게 마우스 선택은 항상 가능해야 함 (기본 상태에서 클릭이 막히던 게이트 제거)
 
         if activeIn.id == FACE_SELECT:
             # ==============================================================================
@@ -417,25 +415,26 @@ class DogboneUi:
                 or input.id == MAX_SLIDER
                 or input.id == MODE_ROW
         ):  # refresh edges after specific input changes
-            previewState = self.previewActive #need to disable preview, otherwise the wrong entities are displayed/Selected 
+            previewState = self.previewActive #need to disable preview, otherwise the wrong entities are displayed/Selected
             self.previewActive = False
             self.command.doExecutePreview()
-            edgeSelectCommand = input.parentCommand.commandInputs.itemById(EDGE_SELECT)
-            if not edgeSelectCommand.isVisible:
-                return
-            focusState:adsk.core.SelectionCommandInput = input.parentCommand.commandInputs.itemById(FACE_SELECT).hasFocus
-            edgeSelectCommand.hasFocus = True
+            try:  # fix: 예외나 조기 return이 발생해도 previewActive 복원이 항상 실행되도록 finally로 보장
+                edgeSelectCommand = input.parentCommand.commandInputs.itemById(EDGE_SELECT)
+                if not edgeSelectCommand.isVisible:
+                    return
+                focusState:adsk.core.SelectionCommandInput = input.parentCommand.commandInputs.itemById(FACE_SELECT).hasFocus
+                edgeSelectCommand.hasFocus = True
 
-            for edgeObj in self.selection.selectedEdges.values():
-                self.ui.activeSelections.removeByEntity(edgeObj.edge)
+                for edgeObj in self.selection.selectedEdges.values():
+                    self.ui.activeSelections.removeByEntity(edgeObj.edge)
 
-            for faceObj in self.selection.selectedFaces.values():
-                faceObj.reSelectEdges()
+                for faceObj in self.selection.selectedFaces.values():
+                    faceObj.reSelectEdges()
 
-            input.parentCommand.commandInputs.itemById(FACE_SELECT).hasFocus = focusState
-            
-            self.previewActive = previewState
-            self.command.doExecutePreview()
+                input.parentCommand.commandInputs.itemById(FACE_SELECT).hasFocus = focusState
+            finally:
+                self.previewActive = previewState
+                self.command.doExecutePreview()
 
             return
 
