@@ -36,8 +36,9 @@ TOOL_DIAMETER_OFFSET = "toolDiaOffset"
 EDGE_TOOLTIP = "click to SELECT OR de-SELECT an internal edge"
 FACE_TOOLTIP = "click a face to select"
 
-EDGE_TOOLTIP_PREVIEW = "ctrl-click to SELECT OR de-SELECT an internal edge"
-FACE_TOOLTIP_PREVIEW = "Ctrl-click to select a face "
+# fix: 선택 게이트 제거로 일반 클릭 선택이 가능해져 Ctrl-click 안내 문구를 실제 동작과 일치시킴
+EDGE_TOOLTIP_PREVIEW = "click to SELECT OR de-SELECT an internal edge"
+FACE_TOOLTIP_PREVIEW = "click a face to select"
 
 EDGE_TOOLTIP_DESCRIPTION = "Only valid dogbone edges can be selected"
 FACE_TOOLTIP_DESCRIPTION = ("applies dogbones to all corner edges dropping from face"
