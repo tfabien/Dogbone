@@ -120,7 +120,7 @@ def eventHandler(handler_cls=adsk.core.Base):
                             return
                         except Exception as e:
                             print(traceback.format_exc())
-                            logger.exception(f"{self.name} error termination")
+                            logger.exception(f"{self.name} error termination: {e}")  # fix: traceback과 함께 예외 요약 메시지를 로그 라인에 남겨 원인 파악을 쉽게 함
 
                     def __str__(self):
                         return self.name
@@ -136,9 +136,8 @@ def eventHandler(handler_cls=adsk.core.Base):
                 # adds to class handlers list, needs to be persistent otherwise GC will remove the handler
                 # - deleting handlers (if necessary) will ensure that garbage collection will happen.
             except Exception as e:
-                logger.exception(e)
                 print(f"{notify_method.__name__}: {traceback.format_exc()}")
-                logger.exception(f"handler creation error {notify_method.__name__}")
+                logger.exception(f"handler creation error {notify_method.__name__}: {e}")  # fix: 중복 logger.exception 호출을 하나로 정리하고 예외 요약을 로그에 명시
             return h
 
         return handlerWrapper

@@ -42,6 +42,7 @@ class DbFace:
         design: adsk.fusion.Design = app.activeProduct
         self.rootComp = design.rootComponent
         self.ui = app.userInterface
+        self._entityToken = face.entityToken  # fix: 아래 face.isValid 폴백에서 참조되므로 self.face 대입보다 먼저 설정
         self.face = (
             face if face.isValid else design.findEntityByToken(self._entityToken)[0]
         )
@@ -50,7 +51,6 @@ class DbFace:
 
         self._params = params
         self.selection = selection
-        self._entityToken = face.entityToken
 
         self.face = face = (
             face if face.isValid else design.findEntityByToken(self._entityToken)[0]
@@ -149,7 +149,30 @@ class DbFace:
                     continue #angle between min and max and doing both acute and obtuse
 
                 edgeId = hash(edge.entityToken) #this normally created by the DbEdge instantiation, but it's needed earlier (I thmk!)
-                self.selection.selectedEdges[edgeId] = self._associatedEdgesDict[ 
+
+                # fix(5차 - 3차/4차의 "다른 face 소유권" 가드 완전 제거):
+                # 두 개의 평행면(예: 박스의 위/아래 면)을 동시에 선택하면 두 face의 "코너에서 뻗어나온
+                # 엣지" 후보가 동일한 물리적 BRepEdge(공유 수직 엣지)로 겹칠 수 있다. 3차 수정(24ae27d)은
+                # 이를 "이미 다른 face가 선점한 edge는 스킵"으로 막았고, 4차 수정(16b6b67)은 자기 자신
+                # 재등록만 예외로 뒀지만, "다른" face가 이미 등록한 edge는 여전히 완전히 스킵되어
+                # 두 번째 face의 _associatedEdgesDict가 아예 비게 되는 문제(오토디텍트 무반응, 엣지
+                # 개수 0)로 이어졌다. self.selection.selectedEdges는 다이얼로그 세션 내내 유지되고
+                # 전체 face 해제(selectionCount==0) 때만 초기화되므로(DogboneUi.py FACE_SELECT 핸들러),
+                # 프리뷰 체크박스나 디텍션 모드를 껐다 켜도 이 소유권 기록은 사라지지 않아 face2는
+                # 세션 내내 계속 차단됐다.
+                #
+                # 근본적으로 이 가드 자체가 잘못된 전제 위에 있었다: DbEdge.__init__의
+                # self._dogboneCentre 계산은 "edge의 두 끝점 중 parentFace에 속한 쪽" 정점을 고른다
+                # (아래 참고). 즉 같은 물리적 edge라도 face1(예: 윗면)과 face2(예: 아랫면)가 공유하면
+                # 서로 다른 끝점에 각자 별개의 도그본이 필요한 것이 정상 동작이며, 이는 "중복 등록"이
+                # 아니라 "edge 양끝에 각각 필요한 별개의 도그본"이다. 4차 조사에서 로그 23,000여 줄
+                # 전수 분석 결과 이 경로(공유 edge 재등록/재선택)에서 실제 예외/실패가 발생한 사례는
+                # 0건이었다 - 3차 수정이 상정했던 "중복 union 실패" 가설은 한 번도 확인되지 않았다.
+                # → face 간 소유권 가드를 제거하고, 가드 도입 이전 동작(각 face가 자신의 후보 edge를
+                # 모두 자신의 _associatedEdgesDict에 등록)으로 되돌린다. self.selection.selectedEdges는
+                # 여전히 최신 등록자로 갱신되며, UI 선택 갱신(removeByEntity)/로그 카운트 등 참조용으로만
+                # 쓰이므로 마지막 등록자를 가리켜도 기능에 영향 없다.
+                self.selection.selectedEdges[edgeId] = self._associatedEdgesDict[
                     edgeId
                 ] = DbEdge(edge=edge, parentFace=self)
                 self.processedEdges.append(edge)
@@ -322,8 +345,33 @@ class DbFace:
     def native(self):
         return self._native
 
+    @property
+    def face(self) -> adsk.fusion.BRepFace:
+        """
+        fix: face2 선택 크래시 근본 수정 - onExecutePreview가 도그본 프리뷰 바디를 만들 때마다
+        모델이 recompute되고, 그 이전에 캐시해둔 BRepFace 트랜지언트 프록시(self._face)는
+        Fusion 내부적으로 invalid 상태가 된다(entityToken 자체가 바뀌는 경우도 있음 - 같은 바디에
+        boolean/feature 연산이 가해지면 토폴로지가 재생성된 것으로 취급되어 페이스의 영속 ID가
+        재발급될 수 있음). 이 상태에서 primaryFace.face에 직접 접근해 evaluator/pointOnFace 등을
+        부르면 "2 : InternalValidationError : face"가 발생한다(onFaceSelect PreSelectionEvent에서
+        마우스가 움직일 때마다 수백 번 반복 발생하던 원인).
+        이미 revalidate()가 point-based 재획득 메커니즘으로 존재했지만 어디서도 호출되지 않았다
+        (dead code). 여기서 접근 시점에 isValid를 확인해 자동으로 재획득하도록 프로퍼티화한다.
+        """
+        if not self._face.isValid:
+            self._face = self.revalidate()
+        return self._face
+
+    @face.setter
+    def face(self, value: adsk.fusion.BRepFace):
+        self._face = value
+
     def revalidate(self) -> adsk.fusion.BRepFace:
-        return cast(adsk.fusion.BRepFace, self.component.findBRepUsingPoint(
+        # fix: self.component(프로퍼티)는 self.face를 다시 읽으므로 self._face가 invalid인 상태에서
+        # 호출하면 face 프로퍼티 getter -> revalidate() -> self.component -> self.face 프로퍼티...로
+        # 무한 재귀에 빠진다. 생성자에서 이미 캐시해 둔 self._component(순수 Component, 리컴퓨트에
+        # 영향받지 않음)를 대신 사용해 재귀를 끊는다.
+        return cast(adsk.fusion.BRepFace, self._component.findBRepUsingPoint(
             self._refPoint, adsk.fusion.BRepEntityTypes.BRepFaceEntityType, -1.0, False
         ).item(0))
 
@@ -333,6 +381,7 @@ class DbEdge:
 
     def __init__(self, edge: adsk.fusion.BRepEdge, parentFace: DbFace):
 
+        self._parentFace = parentFace  # fix: 아래 self.component(=_parentFace.component 참조) 폴백보다 먼저 대입되어야 함
 
         self._refPoint = edge.pointOnEdge
 
@@ -350,7 +399,6 @@ class DbEdge:
         self.entityToken = edge.entityToken
         self._edgeId = hash(self.entityToken)
         self._selected = True
-        self._parentFace = parentFace
         self._native = self.edge.nativeObject if self.edge.nativeObject else self.edge
         self._component = edge.body.parentComponent
         self._params = self._parentFace._params

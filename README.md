@@ -1,3 +1,14 @@
+> [!NOTE]
+> **This is a fork with UI bug fixes** (based on DVE2000/Dogbone master, 2026-07).
+> It fixes: face selection not registering on click, preview freezing after
+> keyboard input, and the 2nd selected face not detecting edges
+> (stale `BRepFace` proxies after preview recompute).
+>
+> Details & discussion: [DVE2000/Dogbone#69](https://github.com/DVE2000/Dogbone/issues/69)
+> · Full diff: [compare view](https://github.com/DVE2000/Dogbone/compare/master...moomoolien-ops:Dogbone:fix/ui-update-bugs)
+>
+> Not an official release — if the fixes get merged upstream, use the original repo.
+
 Dogbone addin for fusion 360
 ===
 #  Installation note: 

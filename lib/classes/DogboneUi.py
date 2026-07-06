@@ -94,8 +94,10 @@ class DogboneUi:
         self.onFaceSelect(event=command.selectionEvent)
         self.onExecute(event=command.execute)
         self.onExecutePreview(event=command.executePreview)
-        self.onKeyDown(event=command.keyDown)
-        self.onKeyUp(event=command.keyUp)
+        # fix: Ctrl 키 기반 previewActive 토글 핸들러 제거 — 일반 클릭 선택이 가능해진 지금은
+        # onKeyUp이 Ctrl이 아닌 모든 키업(값 입력, 슬라이더 조작 등)에서 previewActive를 False로
+        # 고착시켜 프리뷰가 멈추는 잔여 버그의 원인이었음. 선택 게이트가 사라져 이 메커니즘의
+        # 존재 이유(Ctrl-click 전용 선택)도 사라졌으므로 등록 자체를 제거.
 
     def create_ui(self):
         self.face_select()
@@ -168,28 +170,27 @@ class DogboneUi:
 
     @eventHandler(handler_cls=adsk.core.CommandEventHandler)
     def onExecutePreview(self, args:adsk.core.CommandEventArgs):
+        # debug: 다중 face 프리뷰 미갱신 이슈 추적용 - previewActive/previewEnabled로 조기 skip 되는지,
+        # 아니면 executeHandler까지 도달했는데 결과가 안 보이는지(예외가 삼켜지는지) 구분하기 위한 로그
+        faceCount = len(self.selection.selectedFaces)
+        edgeCount = len(self.selection.selectedEdges)
         if self.previewActive and self.param.previewEnabled:
+            logger.debug(
+                f"onExecutePreview: executing - faces={faceCount}, edges={edgeCount}, "
+                f"previewActive={self.previewActive}, previewEnabled={self.param.previewEnabled}"
+            )
             args.isValidResult = True
             self.executeHandler(self.param, self.selection)
+            logger.debug("onExecutePreview: executeHandler returned normally")
+        else:
+            logger.debug(
+                f"onExecutePreview: SKIPPED (early return) - faces={faceCount}, edges={edgeCount}, "
+                f"previewActive={self.previewActive}, previewEnabled={self.param.previewEnabled}"
+            )
 
     @eventHandler(handler_cls=adsk.core.CommandEventHandler)
     def onExecute(self, args):
         self.executeHandler(self.param, self.selection)
-
-    @eventHandler(handler_cls=adsk.core.KeyboardEventHandler)
-    def onKeyDown(self, args:adsk.core.KeyboardEventArgs):
-        keyCode = args.keyCode
-        modifier = args.modifierMask  
-        self.previewActive = not keyCode == adsk.core.KeyCodes.ControlKeyCode
-        self.command.doExecutePreview()
-
-    @eventHandler(handler_cls=adsk.core.KeyboardEventHandler)
-    def onKeyUp(self, args):
-        keyCode = args.keyCode
-        modifier = args.modifierMask  
-        self.previewActive = keyCode == adsk.core.KeyCodes.ControlKeyCode  
-        self.command.doExecutePreview()
-  
 
     @eventHandler(handler_cls=adsk.core.SelectionEventHandler)
     def onFaceSelect(self, args):
@@ -203,9 +204,7 @@ class DogboneUi:
         if activeIn.id != FACE_SELECT and activeIn.id != EDGE_SELECT:
             return  # jump out if not dealing with either of the two selection boxes
 
-        if self.previewActive and self.param.previewEnabled:
-            eventArgs.isSelectable = False
-            return
+        # fix: previewActive/previewEnabled와 무관하게 마우스 선택은 항상 가능해야 함 (기본 상태에서 클릭이 막히던 게이트 제거)
 
         if activeIn.id == FACE_SELECT:
             # ==============================================================================
@@ -417,25 +416,26 @@ class DogboneUi:
                 or input.id == MAX_SLIDER
                 or input.id == MODE_ROW
         ):  # refresh edges after specific input changes
-            previewState = self.previewActive #need to disable preview, otherwise the wrong entities are displayed/Selected 
+            previewState = self.previewActive #need to disable preview, otherwise the wrong entities are displayed/Selected
             self.previewActive = False
             self.command.doExecutePreview()
-            edgeSelectCommand = input.parentCommand.commandInputs.itemById(EDGE_SELECT)
-            if not edgeSelectCommand.isVisible:
-                return
-            focusState:adsk.core.SelectionCommandInput = input.parentCommand.commandInputs.itemById(FACE_SELECT).hasFocus
-            edgeSelectCommand.hasFocus = True
+            try:  # fix: 예외나 조기 return이 발생해도 previewActive 복원이 항상 실행되도록 finally로 보장
+                edgeSelectCommand = input.parentCommand.commandInputs.itemById(EDGE_SELECT)
+                if not edgeSelectCommand.isVisible:
+                    return
+                focusState:adsk.core.SelectionCommandInput = input.parentCommand.commandInputs.itemById(FACE_SELECT).hasFocus
+                edgeSelectCommand.hasFocus = True
 
-            for edgeObj in self.selection.selectedEdges.values():
-                self.ui.activeSelections.removeByEntity(edgeObj.edge)
+                for edgeObj in self.selection.selectedEdges.values():
+                    self.ui.activeSelections.removeByEntity(edgeObj.edge)
 
-            for faceObj in self.selection.selectedFaces.values():
-                faceObj.reSelectEdges()
+                for faceObj in self.selection.selectedFaces.values():
+                    faceObj.reSelectEdges()
 
-            input.parentCommand.commandInputs.itemById(FACE_SELECT).hasFocus = focusState
-            
-            self.previewActive = previewState
-            self.command.doExecutePreview()
+                input.parentCommand.commandInputs.itemById(FACE_SELECT).hasFocus = focusState
+            finally:
+                self.previewActive = previewState
+                self.command.doExecutePreview()
 
             return
 
@@ -464,11 +464,17 @@ class DogboneUi:
                     return
 
                 # Else find the missing face in selection
+                # fix: 아래 두 지점(None 가드, 대칭차->차집합)은 FACE_SELECT add 경로에서 발견된 것과
+                # 동일한 근본 원인(recompute 이후 entity가 None이 되거나 entityToken/hash가 바뀜)에
+                # 대한 동일 패턴의 방어. 대칭차(^)를 쓰면 recompute로 hash가 바뀐, 여전히 선택 중인
+                # face까지 "missing"으로 오인해 잘못 삭제하거나 KeyError를 낼 수 있어 방향이 있는
+                # 차집합으로 변경한다.
                 selectionSet = {
-                    hash(cast(adsk.fusion.BRepEdge, s.selection(i).entity).entityToken)
+                    hash(cast(adsk.fusion.BRepEdge, entity).entityToken)
                     for i in range(s.selectionCount)
+                    if (entity := s.selection(i).entity) is not None
                 }
-                missingFaces = set(self.selection.selectedFaces.keys()) ^ selectionSet
+                missingFaces = set(self.selection.selectedFaces.keys()) - selectionSet
                 input.commandInputs.itemById(EDGE_SELECT).isVisible = True
                 input.commandInputs.itemById(EDGE_SELECT).hasFocus = True
 
@@ -488,21 +494,41 @@ class DogboneUi:
             input.commandInputs.itemById(EDGE_SELECT).isVisible = True
             input.commandInputs.itemById(EDGE_SELECT).hasFocus = True
 
+            # fix: face2 선택 크래시 근본 수정 - onExecutePreview가 도그본 프리뷰 바디를 생성하며
+            # 모델을 recompute하면, 그 시점 이후 Fusion이 반환하는 s.selection(i).entity가 완전히
+            # 무효화된 항목에 대해 None을 돌려줄 수 있다("AttributeError: 'NoneType' object has no
+            # attribute 'entityToken'"의 실제 원인). 이런 None 엔트리는 실제 사용자가 선택 해제한 게
+            # 아니라 recompute로 인한 일시적 무효화이므로, selectionDict 구성 시 걸러내고 다음 입력
+            # 변경 사이클에서 자연히 정리되도록 한다.
             selectionDict = {
-                hash(
-                    cast(adsk.fusion.BRepEdge, s.selection(i).entity).entityToken
-                ): s.selection(i).entity
+                hash(cast(adsk.fusion.BRepEdge, entity).entityToken): entity
                 for i in range(s.selectionCount)
+                if (entity := s.selection(i).entity) is not None
             }
 
-            addedFaces = set(self.selection.selectedFaces.keys()) ^ set(
-                selectionDict.keys()
-            )  # get difference -> results in
+            # fix: 기존에는 대칭차(^)를 사용해 "이미 등록된 face 목록"과 "현재 선택된 face 목록"의
+            # 차이를 addedFaces로 취급했다. 그러나 onExecutePreview의 recompute로 이미 선택된 face의
+            # BRepFace가 재생성되면 그 face의 entityToken(및 hash)이 바뀔 수 있어, 기존에 등록된
+            # 키가 selectionDict에서 사라진 것처럼 보인다. 대칭차는 이런 "사라진 옛 키"까지
+            # addedFaces에 포함시켜 버려서, 이후 `selectionDict[faceId]`가 존재하지 않는 옛 키를
+            # 조회하다 KeyError로 죽었다(onInputChanged_handler error termination: KeyError).
+            # 실제로 "새로 추가된 face"는 selectionDict에는 있지만 아직 selectedFaces에 등록되지
+            # 않은 키뿐이므로, 방향이 있는 차집합(selectionDict - selectedFaces)으로 바꿔 옛 키가
+            # 절대 addedFaces에 섞이지 않도록 한다.
+            addedFaces = set(selectionDict.keys()) - set(
+                self.selection.selectedFaces.keys()
+            )
+
+            # debug: 다중 face 선택 추적용 - 몇 번째 face가 추가되는지, 추가 전 edge 개수 확인
+            logger.debug(
+                f"FACE_SELECT add: existingFaces={len(self.selection.selectedFaces)}, "
+                f"addedFaces={len(addedFaces)}, edgesBefore={len(self.selection.selectedEdges)}"
+            )
 
             for faceId in addedFaces:
                 changedEntity = selectionDict[
                     faceId
-                ] 
+                ]
                 activeOccurrenceId = (
                     hash(changedEntity.assemblyContext.entityToken)
                     if changedEntity.assemblyContext
@@ -527,6 +553,12 @@ class DogboneUi:
                     activeOccurrenceId
                 ] = faces  # adds a face to a list of faces associated with this occurrence
                 self.selection.selectedFaces.update({faceObj.faceId: faceObj for faceObj in createdFace})
+
+                # debug: registerEdges 완료 직후(DbFace 생성자 안에서 이미 실행됨) edge 총 개수 확인
+                # - registerEdges의 중복-claim 가드가 실제로 몇 개를 걸러냈는지는 위 DbFace/DbClasses 로그와 대조
+                logger.debug(
+                    f"FACE_SELECT add: faceId={faceId} registered, edgesAfter={len(self.selection.selectedEdges)}"
+                )
 
                 for face_id in addedFaces:
                     self.selection.selectedFaces[face_id].selectAll()
@@ -691,9 +723,9 @@ class DogboneUi:
         )
 
         previewEnabled.tooltip = "Activates live preview"
+        # fix: Ctrl 키 기반 previewActive 메커니즘 제거에 맞춰 남아있던 "ctrl-click" 안내 문구 삭제
         previewEnabled.tooltipDescription =(
-                                            "<br>Use ctrl-click when preview is active"
-                                            "<br><br>Warning:"
+                                            "<br>Warning:"
                                             "<br>the number of edges selected,"
                                             "<br>along with the power of your computer and"
                                             "<br>graphics card may result in a delay in showing the preview"
