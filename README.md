@@ -83,6 +83,8 @@ unchanged.
 * **No refresh command needed.** Editing an earlier feature that the
   dogbones depend on triggers automatic recompute.
 
+![DogboneCF in the Timeline](./resources/dogbonesCF_timeline.png)
+
 Trade-off: `DogboneCF` doesn't support deselecting individual auto-detected
 corner edges after selecting a face (all qualifying corners get a dogbone),
 and only targets the Design workspace (no Mfg workspace command).
