@@ -251,8 +251,11 @@ class DogboneCFAddIn(FusionCustomFeatureAddIn):
 			minimalPercent=Parameter(commandInputs.itemById('minimalPercent')),
 			acuteAngle=commandInputs.itemById('acuteAngle').value,
 			obtuseAngle=commandInputs.itemById('obtuseAngle').value,
-			minAngleLimit=Parameter(commandInputs.itemById('minAngleLimit')),
-			maxAngleLimit=Parameter(commandInputs.itemById('maxAngleLimit')),
+			# FloatSliderCommandInput.expressionOne throws (InternalValidationError:
+			# pInputUnits) on a unitless slider - read .valueOne instead, which is
+			# also all the original Dogbone dialog ever reads from these sliders.
+			minAngleLimit=Parameter(commandInputs.itemById('minAngleLimit').valueOne),
+			maxAngleLimit=Parameter(commandInputs.itemById('maxAngleLimit').valueOne),
 		)
 
 	def customFeatureToParams(
