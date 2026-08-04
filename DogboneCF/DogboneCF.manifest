@@ -1,0 +1,13 @@
+{
+	"autodeskProduct":	"Fusion360",
+	"type":	"addin",
+	"id":	"1739ab8e-5ba7-439a-9c56-fe5a45ce2d5c",
+	"author":	"Peter Ludikar, Gary Singer, Casey Rogers, Patrick Rainsberry, David Liu",
+	"description":	{
+		"":	"Dogbone fillets as a single editable Timeline feature."
+	},
+	"version":	"1.0",
+	"runOnStartup":	true,
+	"supportedOS":	"windows|mac",
+	"editEnabled":	true
+}
