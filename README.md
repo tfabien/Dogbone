@@ -1,24 +1,6 @@
 Dogbone addin for fusion 360
 ===
 
-## Installation
-
-The easiest way to install is to use Jerome Briot's installer, available from
-the Fusion App Store (Utilities/Add-Ins/Fusion App Store -
-[Install scripts or addins from GitHub or GitLab](https://apps.autodesk.com/FUSION/en/Detail/Index?id=789800822168335025&appLang=en&os=Mac))
-from the top menu in F360.
-
-If you want to install manually, see
-[How to install sample Add-Ins and Scripts](https://rawgit.com/AutodeskFusion360/AutodeskFusion360.github.io/master/Installation.html).
-Either way, make sure the folder name only contains `a-zA-Z0-9` characters
-(i.e. make sure "Dogbone" doesn't have a prefix or suffix) - Fusion won't
-load it otherwise.
-
-This fork also includes `DogboneCF/`, a second, separate add-in living
-alongside the original `Dogbone/`. Install it the same way, as its own
-folder under `API/AddIns`. See **Version 3.0** in Version History below for
-what it changes.
-
 ## Description
 Face selected and top face dogbones |
 -----------------------------|
@@ -37,6 +19,24 @@ Dogbone has been completely revamped from the original add-in, which was based o
 **This version should work with all static dogbones. Parameterized dogbones mostly work, but there are definite issues with the Fusion360 API that may cause problems when trying to create dogbones. If that happens, you can create a logfile and post it here to let us know. If it turns out that it is a Fusion360 bug, please report it to Autodesk.**
 
 **WARNING: use at your own risk. The code provided is provided "as is" and with all faults. We specifically disclaim any implied warranty of merchantability or fitness for a particular use. The operation of the code provided is not warranted to be uninterrupted or error free.**
+
+## Installation
+
+The easiest way to install is to use Jerome Briot's installer, available from
+the Fusion App Store (Utilities/Add-Ins/Fusion App Store -
+[Install scripts or addins from GitHub or GitLab](https://apps.autodesk.com/FUSION/en/Detail/Index?id=789800822168335025&appLang=en&os=Mac))
+from the top menu in F360.
+
+If you want to install manually, see
+[How to install sample Add-Ins and Scripts](https://rawgit.com/AutodeskFusion360/AutodeskFusion360.github.io/master/Installation.html).
+Either way, make sure the folder name only contains `a-zA-Z0-9` characters
+(i.e. make sure "Dogbone" doesn't have a prefix or suffix) - Fusion won't
+load it otherwise.
+
+This fork also includes `DogboneCF/`, a second, separate add-in living
+alongside the original `Dogbone/`. Install it the same way, as its own
+folder under `API/AddIns`. See **Version 3.0** in Version History below for
+what it changes.
 
 ## Instructions
 **Note that you can hover your cursor over any Dogbone dialog item and you will get an explanatory popup in Fusion360.**

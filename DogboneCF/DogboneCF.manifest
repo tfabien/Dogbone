@@ -6,7 +6,7 @@
 	"description":	{
 		"":	"Dogbone fillets as a single editable Timeline feature."
 	},
-	"version":	"1.0",
+	"version":	"3.0",
 	"runOnStartup":	true,
 	"supportedOS":	"windows|mac",
 	"editEnabled":	true
