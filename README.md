@@ -1,5 +1,26 @@
 Dogbone addin for fusion 360
 ===
+# Fork note: DogboneCF
+
+This fork adds `DogboneCF/`, a separate add-in living alongside the original
+`Dogbone/` (which is untouched). It's the same dogbone geometry, but wired
+into Fusion's Custom Feature API instead of the classic base-feature +
+combine-feature flow. Differences from the original:
+
+* **Native single feature.** A dogbone operation shows up as one entry in
+  the Timeline (like a built-in feature), instead of a base feature plus a
+  combine feature per body.
+* **Editable like a built-in feature.** Select the feature and choose "Edit
+  Feature" to change tool diameter, offset, style, etc. - no separate dialog
+  state to manage.
+* **No refresh command needed.** Editing an earlier feature that the
+  dogbones depend on triggers automatic recompute. The classic add-in's
+  "Update"/refresh command is not needed and isn't included in `DogboneCF`.
+
+Trade-off: `DogboneCF` doesn't support deselecting individual auto-detected
+corner edges after selecting a face (all qualifying corners get a dogbone),
+and only targets the Design workspace (no Mfg workspace command).
+
 #  Installation note: 
 The easiest way to install is to use Jerome Briot's installer, which you can get from the Fusion App store (utilities/add-ins/fusion App Store - [
 Install scripts or addins from GitHub or GitLab](https://apps.autodesk.com/FUSION/en/Detail/Index?id=789800822168335025&appLang=en&os=Mac)) from the top menu in F360.
