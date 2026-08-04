@@ -9,7 +9,9 @@ from .fusion_util import *
 from .dogbone_base_combines import DogboneBaseCombines
 from .lib.classes import DbParams, DbFace, Selection
 from .lib.utils import getTopFace
-from .constants import NORMAL_DOGBONE, MINIMAL_DOGBONE, MORTISE_DOGBONE
+from .constants import (
+	NORMAL_DOGBONE, MINIMAL_DOGBONE, MORTISE_DOGBONE,
+	FROM_SELECTED_FACE, FROM_TOP_FACE, ON_LONG_SIDE, ON_SHORT_SIDE)
 
 try:
 	log('fusion_dogbone.py module loaded')
@@ -80,85 +82,87 @@ class DogboneCFAddIn(FusionCustomFeatureAddIn):
 
 		facesInput = inputs.addSelectionInput(
 			'faces',
-			'Faces',
+			'Face',
 			'Select faces to drop dogbones from all inside corner edges.')
 		facesInput.addSelectionFilter('PlanarFaces')
 		facesInput.tooltip = 'Select faces to drop dogbones from all inside corner edges.'
 		facesInput.setSelectionLimits(1)
 
 		input = inputs.addValueInput(
-			'toolDia', 'Tool Diameter',
+			'toolDia', 'Tool Dia',
 			unitType=params.toolDia.units,
 			initialValue=params.toolDia.valueInput)
 		input.minimumValue = 0
 		input.isMinimumInclusive = False
 		input.isMinimumLimited = True
-		input.tooltip = 'Diameter of the cutting tool that will be used to cut the dogbone.'
+		input.tooltip = "Diameter of the tool with which you'll cut the dogbone."
 
 		input = inputs.addValueInput(
-			'toolDiaOffset', 'Tool Diameter Offset',
+			'toolDiaOffset', 'Tool diameter offset',
 			unitType=params.toolDiaOffset.units,
 			initialValue=params.toolDiaOffset.valueInput)
-		input.tooltip = 'Additional radial offset added to the tool diameter.'
+		input.tooltip = 'Increases the tool diameter'
 		input.tooltipDescription = (
-			'Additional radial offset added to the tool diameter, letting the '
-			'dogbone hole be cut slightly oversized (or undersized, if negative) '
-			'compared to the tool itself.')
+			'Use this to create an oversized dogbone.<br>'
+			'Normally set to 0.<br>'
+			'A value of .010 would increase the dogbone diameter by .010<br>'
+			'Used when you want to keep the tool diameter and oversize value separate')
 
-		input = inputs.addDropDownCommandInput(
-			'dbType', 'Dogbone Type',
-			adsk.core.DropDownStyles.TextListDropDownStyle)
-		input.listItems.add(NORMAL_DOGBONE, params.dbType == NORMAL_DOGBONE)
-		input.listItems.add(MINIMAL_DOGBONE, params.dbType == MINIMAL_DOGBONE)
-		input.listItems.add(MORTISE_DOGBONE, params.dbType == MORTISE_DOGBONE)
-		input.tooltip = 'Dogbone style.'
-		input.tooltipDescription = (
-			f'<b>{NORMAL_DOGBONE}</b>: a full-radius dogbone centred on the corner.<br><br>'
-			f'<b>{MINIMAL_DOGBONE}</b>: the dogbone is pulled further into the corner '
-			'so less material is removed.<br><br>'
-			f'<b>{MORTISE_DOGBONE}</b>: the dogbone is offset to one side of the '
-			'corner, for mortise and tenon style joints.')
+		modeGroup = inputs.addGroupCommandInput('modeGroup', 'Mode')
+		modeGroup.isExpanded = True
+		modeInputs = modeGroup.children
 
-		input = inputs.addBoolValueInput('fromTop', 'From Top Face', True, '', params.fromTop)
-		input.tooltip = 'Project the dogbone depth from the top face of the body instead of the selected face.'
+		typeRow = modeInputs.addButtonRowCommandInput('dbType', 'Type', False)
+		typeRow.listItems.add(NORMAL_DOGBONE, params.dbType == NORMAL_DOGBONE, 'Resources/ui/type/normal')
+		typeRow.listItems.add(MINIMAL_DOGBONE, params.dbType == MINIMAL_DOGBONE, 'Resources/ui/type/minimal')
+		typeRow.listItems.add(MORTISE_DOGBONE, params.dbType == MORTISE_DOGBONE, 'Resources/ui/type/hidden')
+		typeRow.tooltipDescription = (
+			'Minimal dogbones creates visually less prominent dogbones, but results in an interference fit '
+			'that, for example, will require a larger force to insert a tenon into a mortise.<br><br>'
+			'Mortise dogbones create dogbones on the shortest sides, or the longest sides.<br>'
+			"A piece with a tenon can be used to hide them if they're not cut all the way through the workpiece.")
 
-		input = inputs.addFloatSpinnerCommandInput(
-			'minimalPercent', 'Minimal %',
+		mortiseRow = modeInputs.addButtonRowCommandInput('longSide', 'Mortise Type', False)
+		mortiseRow.listItems.add(ON_LONG_SIDE, params.longSide, 'Resources/ui/type/hidden/longside')
+		mortiseRow.listItems.add(ON_SHORT_SIDE, not params.longSide, 'Resources/ui/type/hidden/shortside')
+		mortiseRow.tooltipDescription = (
+			'Along Longest will have the dogbones cut into the longer sides.<br>'
+			'Along Shortest will have the dogbones cut into the shorter sides.')
+		mortiseRow.isVisible = params.dbType == MORTISE_DOGBONE
+
+		input = modeInputs.addFloatSpinnerCommandInput(
+			'minimalPercent', 'Percentage Reduction',
 			unitType=Parameter.UNITLESS, min=0.1, max=100, spinStep=1,
 			initialValue=clamp(params.minimalPercent.value, 0.1, 100))
 		input.expression = params.minimalPercent.expression
-		input.tooltip = 'How much extra offset (as a % of tool radius) pulls the dogbone into the corner, in Minimal Dogbone mode.'
+		input.tooltip = 'Percentage of tool radius added to push out dogBone - leaves actual corner exposed'
+		input.tooltipDescription = 'This should typically be left at 10%, but if the fit is too tight, it should be reduced'
+		input.isVisible = params.dbType == MINIMAL_DOGBONE
 
-		input = inputs.addDropDownCommandInput(
-			'longSide', 'Mortise Side',
-			adsk.core.DropDownStyles.TextListDropDownStyle)
-		input.listItems.add('On Long Side', params.longSide)
-		input.listItems.add('On Short Side', not params.longSide)
-		input.tooltip = 'Which side of the corner the Mortise Dogbone sits on.'
+		depthRow = modeInputs.addButtonRowCommandInput('fromTop', 'Depth Extent', False)
+		depthRow.listItems.add(FROM_SELECTED_FACE, not params.fromTop, 'Resources/ui/mode/fromFace')
+		depthRow.listItems.add(FROM_TOP_FACE, params.fromTop, 'Resources/ui/mode/fromTop')
+		depthRow.tooltipDescription = (
+			'When "From Top Face" is selected, all dogbones will be extended to the top most face<br><br>'
+			"This is typically chosen when you don't want to, or can't do, double sided machining")
 
-		angleGroup = inputs.addGroupCommandInput('angleGroup', 'Angle Detection')
+		angleGroup = inputs.addGroupCommandInput('angleGroup', 'Detection Mode')
 		angleGroup.isExpanded = params.acuteAngle or params.obtuseAngle
 		angleInputs = angleGroup.children
 
-		input = angleInputs.addBoolValueInput('acuteAngle', 'Acute Angles', True, '', params.acuteAngle)
-		input.tooltip = 'Also add dogbones at acute (<90°) inside corners.'
+		input = angleInputs.addBoolValueInput('acuteAngle', 'Acute Angle', True, '', params.acuteAngle)
+		input.tooltip = 'Enables detection of corner angles less than 90'
 
-		input = angleInputs.addBoolValueInput('obtuseAngle', 'Obtuse Angles', True, '', params.obtuseAngle)
-		input.tooltip = 'Also add dogbones at obtuse (>90°) inside corners.'
+		input = angleInputs.addFloatSliderCommandInput('minAngleLimit', 'Min Limit', '', 10.0, 89.0)
+		input.valueOne = clamp(params.minAngleLimit.value, 10.0, 89.0)
+		input.isVisible = params.acuteAngle
 
-		input = angleInputs.addFloatSpinnerCommandInput(
-			'minAngleLimit', 'Min Angle (deg)',
-			unitType=Parameter.UNITLESS, min=0, max=180, spinStep=1,
-			initialValue=clamp(params.minAngleLimit.value, 0, 180))
-		input.expression = params.minAngleLimit.expression
-		input.tooltip = 'Smallest inside-corner angle (in degrees) that still gets a dogbone.'
+		input = angleInputs.addBoolValueInput('obtuseAngle', 'Obtuse Angle', True, '', params.obtuseAngle)
+		input.tooltip = 'Enables detection of corner angles greater than 90'
 
-		input = angleInputs.addFloatSpinnerCommandInput(
-			'maxAngleLimit', 'Max Angle (deg)',
-			unitType=Parameter.UNITLESS, min=0, max=180, spinStep=1,
-			initialValue=clamp(params.maxAngleLimit.value, 0, 180))
-		input.expression = params.maxAngleLimit.expression
-		input.tooltip = 'Largest inside-corner angle (in degrees) that still gets a dogbone.'
+		input = angleInputs.addFloatSliderCommandInput('maxAngleLimit', 'Max Limit', '', 91.0, 170.0)
+		input.valueOne = clamp(params.maxAngleLimit.value, 91.0, 170.0)
+		input.isVisible = params.obtuseAngle
 
 		# For error message output.
 		inputs.addTextBoxCommandInput('error', '', '', numRows=1, isReadOnly=True)
@@ -170,11 +174,8 @@ class DogboneCFAddIn(FusionCustomFeatureAddIn):
 		commandInputs.itemById('minimalPercent').isVisible = dbType == MINIMAL_DOGBONE
 		commandInputs.itemById('longSide').isVisible = dbType == MORTISE_DOGBONE
 
-		angleDetectionOn = (
-			commandInputs.itemById('acuteAngle').value
-			or commandInputs.itemById('obtuseAngle').value)
-		commandInputs.itemById('minAngleLimit').isVisible = angleDetectionOn
-		commandInputs.itemById('maxAngleLimit').isVisible = angleDetectionOn
+		commandInputs.itemById('minAngleLimit').isVisible = commandInputs.itemById('acuteAngle').value
+		commandInputs.itemById('maxAngleLimit').isVisible = commandInputs.itemById('obtuseAngle').value
 
 	def canSelect(self, entity, input: adsk.core.SelectionCommandInput) -> bool:
 		if input.id == 'faces':
@@ -220,16 +221,18 @@ class DogboneCFAddIn(FusionCustomFeatureAddIn):
 		for item in commandInputs.itemById('dbType').listItems:
 			item.isSelected = item.name == params.dbType
 
-		commandInputs.itemById('fromTop').value = params.fromTop
+		for item in commandInputs.itemById('longSide').listItems:
+			item.isSelected = (item.name == ON_LONG_SIDE) == params.longSide
+
 		commandInputs.itemById('minimalPercent').expression = params.minimalPercent.expression
 
-		for item in commandInputs.itemById('longSide').listItems:
-			item.isSelected = (item.name == 'On Long Side') == params.longSide
+		for item in commandInputs.itemById('fromTop').listItems:
+			item.isSelected = (item.name == FROM_TOP_FACE) == params.fromTop
 
 		commandInputs.itemById('acuteAngle').value = params.acuteAngle
+		commandInputs.itemById('minAngleLimit').valueOne = params.minAngleLimit.value
 		commandInputs.itemById('obtuseAngle').value = params.obtuseAngle
-		commandInputs.itemById('minAngleLimit').expression = params.minAngleLimit.expression
-		commandInputs.itemById('maxAngleLimit').expression = params.maxAngleLimit.expression
+		commandInputs.itemById('maxAngleLimit').valueOne = params.maxAngleLimit.value
 
 		self._updateVisibility(commandInputs)
 
@@ -242,9 +245,9 @@ class DogboneCFAddIn(FusionCustomFeatureAddIn):
 			toolDia=Parameter(commandInputs.itemById('toolDia')),
 			toolDiaOffset=Parameter(commandInputs.itemById('toolDiaOffset')),
 			dbType=commandInputs.itemById('dbType').selectedItem.name,
-			fromTop=commandInputs.itemById('fromTop').value,
+			fromTop=commandInputs.itemById('fromTop').selectedItem.name == FROM_TOP_FACE,
 			mortiseType=False,
-			longSide=commandInputs.itemById('longSide').selectedItem.name == 'On Long Side',
+			longSide=commandInputs.itemById('longSide').selectedItem.name == ON_LONG_SIDE,
 			minimalPercent=Parameter(commandInputs.itemById('minimalPercent')),
 			acuteAngle=commandInputs.itemById('acuteAngle').value,
 			obtuseAngle=commandInputs.itemById('obtuseAngle').value,
